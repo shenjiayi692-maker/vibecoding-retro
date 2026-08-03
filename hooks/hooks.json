@@ -1,0 +1,15 @@
+{
+  "description": "会话结束时只登记一行索引,供周报统计复盘覆盖率。不生成报告、不弹通知、不调模型。",
+  "hooks": {
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/session_end_index.py\""
+          }
+        ]
+      }
+    ]
+  }
+}

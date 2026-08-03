@@ -1,0 +1,15 @@
+{
+  "name": "vibecoding-retro",
+  "description": "vibecoding-retro 的单插件 marketplace",
+  "owner": {
+    "name": "jiayishen"
+  },
+  "plugins": [
+    {
+      "name": "vibecoding-retro",
+      "description": "对每段 AI 编程对话做复盘:五维效率评分、能力缺口诊断、带出处的优化建议、报告归档与周报交叉汇总。",
+      "category": "productivity",
+      "source": "./"
+    }
+  ]
+}

@@ -1,0 +1,12 @@
+# 打包产物:可由 `zip -rq vibecoding-retro.zip vibecoding-retro` 随时重建
+vibecoding-retro.zip
+
+# Python
+__pycache__/
+*.py[cod]
+
+# Claude Code 本机状态(权限授权等,与他人无关)
+.claude/settings.local.json
+
+# macOS
+.DS_Store

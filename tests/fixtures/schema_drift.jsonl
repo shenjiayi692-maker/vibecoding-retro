@@ -1,0 +1,7 @@
+{"type": "user", "timestamp": "2026-07-03T08:00:00.000Z", "sessionId": "fixture-session-0001", "cwd": "/Users/test/demo-project", "isSidechain": false, "message": {"role": "user", "content": "修一下登录页的样式问题"}, "version": "9.9.9"}
+{"type": "assistant", "timestamp": "2026-07-03T08:01:00.000Z", "sessionId": "fixture-session-0001", "cwd": "/Users/test/demo-project", "isSidechain": false, "message": {"id": "d1", "role": "assistant", "model": "claude-sonnet-4-6", "content": [{"type": "text", "text": "看一下。"}]}, "version": "9.9.9"}
+{"type": "assistant", "timestamp": "2026-07-03T08:02:00.000Z", "sessionId": "fixture-session-0001", "cwd": "/Users/test/demo-project", "isSidechain": false, "message": {"id": "d2", "role": "assistant", "model": "claude-sonnet-4-6", "content": [{"type": "text", "text": "改好了。"}], "usage": {"output_tokens": 80}}, "version": "9.9.9"}
+{"type": "assistant", "sessionId": "fixture-session-0001", "cwd": "/Users/test/demo-project", "message": {"id": "d3", "role": "assistant", "model": "claude-sonnet-4-6", "content": [{"type": "text", "text": "补充说明。"}]}, "version": "9.9.9"}
+this is not json at all {{{
+{"type": "queue-operation", "timestamp": "2026-07-03T08:03:00.000Z", "sessionId": "fixture-session-0001", "cwd": "/Users/test/demo-project", "isSidechain": false, "operation": "enqueue", "version": "9.9.9"}
+{"type": "user", "timestamp": "2026-07-03T08:05:00.000Z", "sessionId": "fixture-session-0001", "cwd": "/Users/test/demo-project", "isSidechain": false, "message": {"role": "user", "content": "样式好了,收工"}, "version": "9.9.9"}

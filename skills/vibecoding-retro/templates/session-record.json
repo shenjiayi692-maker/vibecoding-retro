@@ -1,0 +1,61 @@
+{
+  "_comment": "追加到 ~/.claude/vibecoding-retro/sessions.jsonl 的单行记录 schema。null 表示无数据。gap_id 见 capability-diagnosis.md。report_path 由 ledger record --report 自动填写,不要手写。",
+  "date": "2026-07-15",
+  "env": "claude-code | cursor | claude-ai | other | weekly",
+  "session_id": "会话 id,取自 parse_session 输出;周报记录留 null",
+  "project": "项目路径或名称,周报按项目聚合时用它",
+  "segment": {
+    "_comment": "本段覆盖范围。下次对同一 session_id 复盘时,ledger last-covered 靠它算增量,省了会重复诊断。",
+    "from_ts": "2026-07-15T09:00:00Z",
+    "to_ts": "2026-07-15T09:45:00Z",
+    "turns": [1, 22]
+  },
+  "task_summary": "一句话任务描述,不含代码内容",
+  "complexity": "S | M | L",
+  "model": "主力模型名,中途换过则记 'sonnet->opus'",
+  "used_plan_mode": true,
+  "duration_min": 45,
+  "active_min": 38,
+  "user_turns": 22,
+  "correction_turns": 3,
+  "tokens": {
+    "input": 12000,
+    "output": 35000,
+    "cache_read": 2400000,
+    "cache_write": 180000,
+    "cost_usd": 1.85
+  },
+  "scores": {
+    "token_efficiency": 4,
+    "mode_selection": 5,
+    "duration_iteration": 3.5,
+    "prompt_quality": 4,
+    "overall": 4.1,
+    "delegation_calibration": 4
+  },
+  "waste_flags": [
+    "repeated-file-read",
+    "oversized-tool-result"
+  ],
+  "suggestions": [
+    {
+      "category": "context-hygiene",
+      "kb_id": "KB-24",
+      "summary": "一句话",
+      "user_response": "accepted | rejected | ignored"
+    }
+  ],
+  "diagnoses": [
+    {
+      "gap_id": "T4",
+      "evidence_summary": "一句话证据摘要",
+      "user_response": "confirmed | rejected | ignored"
+    }
+  ],
+  "tips_to_try_updates": [
+    {
+      "kb_id": "KB-24",
+      "status": "pending | tried-worked | tried-failed | skipped"
+    }
+  ]
+}
