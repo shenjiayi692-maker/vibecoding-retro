@@ -2,7 +2,7 @@
 
 **给高频使用 AI 的产品经理的工作流复盘工具。** 每段 vibecoding 对话结束后说一句"复盘",得到一份带证据的诊断报告;报告存进本地档案;每周做一次跨项目的交叉汇总。
 
-形态是一个 **Claude Code skill**——**界面就是对话**。没有网站、没有服务器、没有数据库,数据是你本地的几个纯文本文件,可 git、可手改、可删。
+形态是一个 **Claude Code plugin**(内含 skill、两个命令、一个只登记索引的钩子)——**界面就是对话**。没有网站、没有服务器、没有数据库,数据是你本地的几个纯文本文件,可 git、可手改、可删。
 
 ## 它和别的工具有什么不同
 
@@ -132,7 +132,7 @@ watching ──确认 3 次──→ structural(升级为结构性缺口,给学�
 本仓库是一个 **Claude Code plugin**。在 Claude Code 里执行:
 
 ```
-/plugin marketplace add <你的仓库地址>
+/plugin marketplace add shenjiayi692-maker/vibecoding-retro
 ```
 
 ```
@@ -146,7 +146,7 @@ watching ──确认 3 次──→ structural(升级为结构性缺口,给学�
 也可以只装 skill(不要命令和钩子):
 
 ```bash
-git clone <仓库地址> /tmp/vr && cp -r /tmp/vr/skills/vibecoding-retro ~/.claude/skills/
+git clone https://github.com/shenjiayi692-maker/vibecoding-retro /tmp/vr && cp -r /tmp/vr/skills/vibecoding-retro ~/.claude/skills/
 ```
 
 验证安装:
@@ -234,7 +234,7 @@ trend_report.py --last 10
 ## 开发
 
 ```bash
-python3 -m unittest discover tests    # 80 个测试
+python3 -m unittest discover tests    # 82 个测试
 ```
 
 夹具覆盖:精确统计、逐轮归因、上下文拖拽、指标可信度、schema 漂移与版本自检、密钥扫描与脱敏(含 git SHA 与 UUID 不误报、thinking 泄漏、同轮回声去重)、台账全生命周期、基线偏差与前后对比、报告归档、周报汇总与覆盖率、SessionEnd 钩子静默失败。**夹具中的密钥均为伪造占位串。**
@@ -246,5 +246,5 @@ python3 -m unittest discover tests    # 80 个测试
 skills/vibecoding-retro/   skill 本体(SKILL.md + references + scripts + templates)
 commands/           /retro、/weekly-retro
 hooks/              SessionEnd 会话索引钩子
-tests/              80 个单测 + 夹具
+tests/              82 个单测 + 夹具
 ```
