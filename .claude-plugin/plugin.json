@@ -1,9 +1,14 @@
 {
   "name": "vibecoding-retro",
-  "description": "给高频使用 AI 的产品经理的工作流复盘工具。每段对话结束说一句复盘,得到一份带证据的诊断报告;报告存进本地档案;每周做一次跨项目交叉汇总。诊断的是你缺什么能力,不是你花了多少 token。",
-  "version": "2.6.0",
+  "description": "复盘你和 AI 的每一段编程对话:用大白话指出这次哪里浪费了、为什么、下次怎么改。每条都指到具体轮次、算得出代价、给得出今天能做完的改法。报告存本地,每周可做一次汇总。",
+  "version": "3.0.0",
   "author": {
     "name": "jiayishen"
   },
-  "keywords": ["retrospective", "workflow", "product-management", "claude-code"]
+  "keywords": [
+    "retrospective",
+    "workflow",
+    "product-management",
+    "claude-code"
+  ]
 }

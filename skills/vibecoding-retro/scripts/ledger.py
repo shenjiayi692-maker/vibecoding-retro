@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
-"""vibecoding-retro 台账状态机。仅标准库,零依赖。输出 JSON 到 stdout。
+"""vibecoding-retro 档案读写。仅标准库,零依赖。输出 JSON 到 stdout。
 
 档案目录:~/.claude/vibecoding-retro/(可用 --dir 或环境变量 VIBECODING_RETRO_HOME 覆盖)
-  sessions.jsonl    历史会话记录(append-only,每条含 report_path 指向报告全文)
-  gap-ledger.json   缺口台账 + tips_to_try 待实践清单 + missing_terms 词汇台账
-  reports/          每次复盘的报告全文(markdown),周报的交叉素材
+  sessions.jsonl        每次复盘的指标记录(append-only)
+  reports/              每次复盘的报告全文,周报的素材来源
+  notes.json            给过的建议(纯追加日志,没有状态机)
+  session-index.jsonl   SessionEnd 钩子登记的会话索引
 
-状态转移规则(以 references/capability-diagnosis.md 为准):
-  count(=用户确认数) >= 3           → structural
-  user_rejected >= 2                 → suppressed(停检)
-  structural 且连续 5 次 session 未现 → graduated
+**这里刻意没有状态机。** 早期版本有一套"缺口台账"(观察→确认3次→结构性→连续5次未现→毕业),
+删掉的原因:它要积累三五次会话才产出第一个结论,而这个工具的承诺是**每一段对话都有用**。
+现在的原则——单次会话就能给出的东西才是主体,跨会话只做两件轻的事:报告归档、复发统计。
 
 所有写操作:先序列化校验,再写临时文件,os.replace 原子替换——写坏档案是最严重的 bug。
 """
@@ -22,18 +22,15 @@ import sys
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
-# 状态转移阈值
-STRUCTURAL_CONFIRMS = 3
-SUPPRESS_REJECTS = 2
-GRADUATE_ABSENT_SESSIONS = 5
-CLUSTER_MIN_TERMS = 3
-BASELINE_MIN_RECORDS = 10
-COMPARE_FLAG_RATIO = 1.5      # 本次达到个人中位数的 N 倍才值得去查,低于此值是正常波动
-EFFECT_MIN_PER_SIDE = 3       # 建议前后对比,每侧至少 N 条才敢说"看得出变化"
+BASELINE_MIN_RECORDS = 10     # 少于这个数不出基线:没有分母就没有"超标"
+COMPARE_FLAG_RATIO = 1.5      # 达到个人中位数的几倍才值得去查,低于此是正常波动
+EFFECT_MIN_PER_SIDE = 3       # 前后对比每侧至少几条才敢说"看得出变化"
 
-TIP_STATUSES = ("pending", "tried-worked", "tried-failed", "skipped")
+SCALES = ("small", "medium", "large")
+# 旧记录用 S/M/L,读的时候归一化。规模只用于同类比较,**不出现在报告里**
+LEGACY_SCALE = {"S": "small", "M": "medium", "L": "large"}
 
-DEFAULT_LEDGER = {"gaps": {}, "graduated": {}, "tips_to_try": [], "missing_terms": []}
+DEFAULT_NOTES = {"suggestions": []}
 
 
 def default_dir():
@@ -60,10 +57,18 @@ def slugify(text, limit=32):
     return (slug[:limit] or "unknown")
 
 
+def scale_of(record):
+    """取记录的任务规模,兼容旧记录的 complexity: S/M/L。"""
+    s = record.get("scale")
+    if s in SCALES:
+        return s
+    return LEGACY_SCALE.get(record.get("complexity"))
+
+
 class Ledger:
     def __init__(self, base_dir):
         self.base = Path(base_dir)
-        self.ledger_path = self.base / "gap-ledger.json"
+        self.notes_path = self.base / "notes.json"
         self.sessions_path = self.base / "sessions.jsonl"
         self.reports_dir = self.base / "reports"
 
@@ -90,11 +95,10 @@ class Ledger:
         return "reports/" + dest.name
 
     def coverage(self, cutoff, records):
-        """本周有多少段会话发生过、其中多少段真的复盘了。
+        """这段时间有多少段会话发生过、其中多少段真的复盘了。
 
         素材来自 SessionEnd 钩子写的 session-index.jsonl(只登记会话存在,不做分析)。
-        钩子没装时返回 available:false——**不要因此假装覆盖率是 100%**,
-        忘了复盘的会话是隐形的,这个功能就是为了让它们现形。
+        钩子没装时返回 available:false——不要因此假装覆盖率是 100%。
         """
         index = self.base / "session-index.jsonl"
         if not index.is_file():
@@ -129,24 +133,24 @@ class Ledger:
             "not_retroed": missed,
         }
 
-    def load(self):
-        if not self.ledger_path.exists():
-            return json.loads(json.dumps(DEFAULT_LEDGER))
-        with self.ledger_path.open("r", encoding="utf-8") as f:
+    def load_notes(self):
+        if not self.notes_path.exists():
+            return json.loads(json.dumps(DEFAULT_NOTES))
+        with self.notes_path.open("r", encoding="utf-8") as f:
             data = json.load(f)  # 损坏则抛异常终止,绝不覆盖坏档案
         if not isinstance(data, dict):
-            raise ValueError("gap-ledger.json 顶层不是对象")
-        for key, default in DEFAULT_LEDGER.items():
+            raise ValueError("notes.json 顶层不是对象")
+        for key, default in DEFAULT_NOTES.items():
             data.setdefault(key, json.loads(json.dumps(default)))
         return data
 
-    def save(self, data):
+    def save_notes(self, data):
         serialized = json.dumps(data, ensure_ascii=False, indent=2)
         json.loads(serialized)  # 回读校验
         self.base.mkdir(parents=True, exist_ok=True)
-        tmp = self.ledger_path.with_suffix(".json.tmp")
+        tmp = self.notes_path.with_suffix(".json.tmp")
         tmp.write_text(serialized + "\n", encoding="utf-8")
-        os.replace(tmp, self.ledger_path)
+        os.replace(tmp, self.notes_path)
 
     def append_session(self, record):
         line = json.dumps(record, ensure_ascii=False)
@@ -171,17 +175,6 @@ class Ledger:
         return records
 
 
-def new_gap():
-    return {
-        "count": 0,
-        "dates": [],
-        "user_confirmed": 0,
-        "user_rejected": 0,
-        "status": "watching",
-        "sessions_since_last_seen": 0,
-    }
-
-
 def cmd_record(ledger, args):
     src = Path(args.session_json)
     if not src.is_file():
@@ -198,7 +191,7 @@ def cmd_record(ledger, args):
     if "date" not in record:
         record["date"] = today()
         warnings.append("记录缺 date 字段,已补今天")
-    for key in ("env", "complexity", "active_min", "user_turns", "tokens"):
+    for key in ("scale", "active_min", "user_turns", "tokens"):
         if key not in record:
             warnings.append("记录缺 %s 字段" % key)
     if not record.get("session_id"):
@@ -211,188 +204,64 @@ def cmd_record(ledger, args):
         warnings.append("未提供 --report,本次报告全文没有归档,周报将缺少这一段素材")
 
     ledger.append_session(record)
-
-    # 毕业计数:本次 session 未出现的缺口,连续未现次数 +1;出现则清零
-    data = ledger.load()
-    mentioned = {
-        d.get("gap_id")
-        for d in record.get("diagnoses", [])
-        if isinstance(d, dict) and d.get("gap_id")
-    }
-    for gap_id, gap in data["gaps"].items():
-        if gap.get("status") == "suppressed":
-            continue
-        if gap_id in mentioned:
-            gap["sessions_since_last_seen"] = 0
-        else:
-            gap["sessions_since_last_seen"] = gap.get("sessions_since_last_seen", 0) + 1
-    ledger.save(data)
-
-    return emit(
-        {
-            "recorded": True,
-            "date": record["date"],
-            "report_path": record.get("report_path"),
-            "warnings": warnings,
-        }
-    )
+    return emit({"recorded": True, "date": record["date"],
+                 "report_path": record.get("report_path"), "warnings": warnings})
 
 
 def cmd_last_covered(ledger, args):
-    """上次对该会话复盘覆盖到哪儿——下次只诊断增量,避免重复诊断同一段。"""
-    matches = [
+    """上次对这个会话复盘覆盖到哪儿——同一个 session 常横跨数天、包含多段工作。"""
+    matched = [
         r for r in ledger.read_sessions() if r.get("session_id") == args.session_id
     ]
-    if not matches:
+    if not matched:
         return emit({"covered": False, "session_id": args.session_id})
-    last = matches[-1]
-    seg = last.get("segment") or {}
+    last = matched[-1]
+    segment = last.get("segment") or {}
     return emit(
         {
             "covered": True,
             "session_id": args.session_id,
-            "segments": len(matches),
             "last_date": last.get("date"),
-            "last_to_ts": seg.get("to_ts"),
-            "last_turn": (seg.get("turns") or [None, None])[1],
-            "report_path": last.get("report_path"),
+            "last_to_ts": segment.get("to_ts"),
+            "last_turns": segment.get("turns"),
+            "times_reviewed": len(matched),
         }
     )
 
 
-def cmd_confirm(ledger, args, confirmed):
-    data = ledger.load()
-    gap = data["gaps"].setdefault(args.gap, new_gap())
-    d = args.date or today()
-    if confirmed:
-        gap["count"] += 1
-        gap["user_confirmed"] += 1
-        gap.setdefault("dates", []).append(d)
-        gap["sessions_since_last_seen"] = 0
-    else:
-        gap["user_rejected"] += 1
-    ledger.save(data)
-    return emit({"gap": args.gap, **gap})
+def cmd_suggest(ledger, args):
+    """记一条给过的建议。**纯追加日志,没有状态**。
+
+    早期版本给每条建议记 pending/已实践/失败/放弃 四态,还算了个"实践率"。
+    删掉的原因:那要求用户每次复盘都回来更新状态,而没人会这么做,
+    结果是指标永远难看,反而制造愧疚。现在只记"什么时候给过什么建议",
+    有没有用交给 `effect` 用真实数字判断。
+    """
+    data = ledger.load_notes()
+    entry = {"date": args.date or today(), "text": args.add}
+    if args.check:
+        entry["check"] = args.check
+    if args.session_id:
+        entry["session_id"] = args.session_id
+    data["suggestions"].append(entry)
+    ledger.save_notes(data)
+    return emit({"added": True, "entry": entry, "total": len(data["suggestions"])})
 
 
-def apply_transitions(data):
-    """执行状态转移,返回变更列表。"""
-    changes = []
-    for gap_id in list(data["gaps"].keys()):
-        gap = data["gaps"][gap_id]
-        status = gap.get("status", "watching")
-        if status != "suppressed" and gap.get("user_rejected", 0) >= SUPPRESS_REJECTS:
-            gap["status"] = "suppressed"
-            changes.append({"gap": gap_id, "from": status, "to": "suppressed"})
-            continue
-        if status == "watching" and gap.get("count", 0) >= STRUCTURAL_CONFIRMS:
-            gap["status"] = "structural"
-            status = "structural"
-            changes.append({"gap": gap_id, "from": "watching", "to": "structural"})
-        if (
-            status == "structural"
-            and gap.get("sessions_since_last_seen", 0) >= GRADUATE_ABSENT_SESSIONS
-        ):
-            data["graduated"][gap_id] = {
-                "resolved_date": today(),
-                "note": "连续%d次session未出现" % gap["sessions_since_last_seen"],
-            }
-            del data["gaps"][gap_id]
-            changes.append({"gap": gap_id, "from": "structural", "to": "graduated"})
-    return changes
-
-
-def cmd_status(ledger, args):
-    data = ledger.load()
-    changes = apply_transitions(data)
-    if changes:
-        ledger.save(data)
-    return emit(
-        {
-            "gaps": data["gaps"],
-            "graduated": data["graduated"],
-            "transitions": changes,
-        }
-    )
-
-
-def cmd_tips(ledger, args):
-    data = ledger.load()
-    tips = data["tips_to_try"]
-    if args.add:
-        kb_id = args.add
-        existing = [t for t in tips if t.get("kb_id") == kb_id and t.get("status") == "pending"]
-        if existing:
-            if args.note:  # 已在清单中时,--note 视为补写具体动作
-                existing[-1]["note"] = args.note
-                ledger.save(data)
-                return emit({"added": False, "kb_id": kb_id, "note_updated": True})
-            return emit({"added": False, "reason": "%s 已在待实践清单中" % kb_id})
-        entry = {"kb_id": kb_id, "date_added": today(), "status": "pending"}
-        if args.note:
-            entry["note"] = args.note
-        tips.append(entry)
-        ledger.save(data)
-        return emit({"added": True, "kb_id": kb_id})
-    if args.set:
-        kb_id, status = args.set
-        if status not in TIP_STATUSES:
-            return emit({"error": "非法状态 %s,可选: %s" % (status, "/".join(TIP_STATUSES))}, 1)
-        matched = [t for t in tips if t.get("kb_id") == kb_id]
-        if not matched:
-            return emit({"error": "%s 不在清单中,先用 --add 添加" % kb_id}, 1)
-        matched[-1]["status"] = status
-        matched[-1]["date_updated"] = today()
-        if args.note:
-            matched[-1]["note"] = args.note
-        ledger.save(data)
-        return emit({"kb_id": kb_id, "status": status})
-    if args.pending:
-        return emit([t for t in tips if t.get("status") == "pending"])
-    return emit({"tips_to_try": tips})
-
-
-def cmd_practice_rate(ledger, args):
-    tips = ledger.load()["tips_to_try"]
-    active = [t for t in tips if t.get("status") != "skipped"]
-    tried = [t for t in active if t.get("status") in ("tried-worked", "tried-failed")]
-    rate = round(len(tried) / len(active), 4) if active else None
-    return emit(
-        {
-            "practice_rate": rate,
-            "tried": len(tried),
-            "active": len(active),
-            "skipped": len(tips) - len(active),
-        }
-    )
-
-
-def cmd_terms(ledger, args):
-    data = ledger.load()
-    terms = data["missing_terms"]
-    if args.add:
-        if not args.domain:
-            return emit({"error": "terms --add 必须带 --domain"}, 1)
-        if any(t.get("term") == args.add for t in terms):
-            return emit({"added": False, "note": "%s 已在词汇台账中" % args.add})
-        terms.append({"term": args.add, "domain": args.domain, "date": today()})
-        ledger.save(data)
-        return emit({"added": True, "term": args.add, "domain": args.domain})
-    if args.clusters:
-        by_domain = {}
-        for t in terms:
-            by_domain.setdefault(t.get("domain") or "unknown", []).append(t.get("term"))
-        clusters = {d: ts for d, ts in by_domain.items() if len(ts) >= CLUSTER_MIN_TERMS}
-        return emit({"clusters": clusters, "total_terms": len(terms)})
-    return emit({"missing_terms": terms})
+def cmd_suggestions(ledger, args):
+    items = ledger.load_notes()["suggestions"]
+    if args.days:
+        cutoff = (date.today() - timedelta(days=args.days)).isoformat()
+        items = [s for s in items if (s.get("date") or "") >= cutoff]
+    return emit({"count": len(items), "suggestions": items})
 
 
 NUMERIC_METRICS = ("active_min", "duration_min", "user_turns", "correction_turns")
-TOKEN_METRICS = ("input", "output", "cache_read", "cache_write", "cost_usd")
+TOKEN_METRICS = ("input", "output", "cache_read", "cache_write")
 
 
 def _medians(records):
-    """一批记录的各指标中位数。中位数不是均值:一次跑飞的会话不该拉走基线。"""
+    """一批记录的各指标中位数。用中位数不用均值:一次跑飞的会话不该拉走基线。"""
     medians = {}
     for key in NUMERIC_METRICS:
         vals = [r[key] for r in records if isinstance(r.get(key), (int, float))]
@@ -407,131 +276,7 @@ def _medians(records):
         ]
         if vals:
             medians["tokens." + key] = statistics.median(vals)
-    overall = [
-        r["scores"]["overall"]
-        for r in records
-        if isinstance(r.get("scores"), dict)
-        and isinstance(r["scores"].get("overall"), (int, float))
-    ]
-    if overall:
-        medians["scores.overall"] = statistics.median(overall)
     return medians
-
-
-def cmd_baseline(ledger, args):
-    records = [r for r in ledger.read_sessions() if r.get("complexity") == args.complexity]
-    if len(records) < BASELINE_MIN_RECORDS:
-        return emit({"ready": False, "count": len(records)})
-    return emit(
-        {
-            "ready": True,
-            "count": len(records),
-            "complexity": args.complexity,
-            "medians": _medians(records),
-        }
-    )
-
-
-def cmd_compare(ledger, args):
-    """本次会话 vs 你自己在同复杂度上的中位数。
-
-    "应有值"没有通用答案——L 级任务花 S 级十倍 token 是正常的。
-    唯一站得住的分母是**你自己同档位的历史中位数**,所以基线不够 10 条时不出数。
-    """
-    try:
-        session = json.loads(Path(args.session_json).read_text(encoding="utf-8"))
-    except (OSError, ValueError) as exc:
-        return emit({"error": "读取 session-json 失败: %s" % exc}, 1)
-    records = [r for r in ledger.read_sessions() if r.get("complexity") == args.complexity]
-    if len(records) < BASELINE_MIN_RECORDS:
-        return emit(
-            {
-                "ready": False,
-                "count": len(records),
-                "needed": BASELINE_MIN_RECORDS,
-                "note": "同档位记录不足,本次不要在报告里提超标——没有分母就没有超标",
-            }
-        )
-    medians = _medians(records)
-    deltas = {}
-    flagged = []
-    for key, median in medians.items():
-        value = _num(session, key)
-        if value is None or not median:
-            continue
-        ratio = round(value / median, 2)
-        deltas[key] = {
-            "value": value,
-            "baseline_median": median,
-            "ratio": ratio,
-            "direction": "above" if ratio > 1 else "below",
-        }
-        if ratio >= COMPARE_FLAG_RATIO:
-            flagged.append(key)
-    return emit(
-        {
-            "ready": True,
-            "complexity": args.complexity,
-            "baseline_count": len(records),
-            "deltas": deltas,
-            "flagged": flagged,
-            "note": (
-                "偏差只负责开启调查,不负责下结论。flagged 的指标要去 prompts[] 里找到"
-                "具体是哪一轮造成的、以及行为原因,找不到就不要写进诊断。"
-                "另:只谈 token 与倍数,不要换算成美元——订阅制下那是估算的估算。"
-            ),
-        }
-    )
-
-
-def cmd_effect(ledger, args):
-    """某条建议采纳前后的实测对比——把"这条建议到底有没有用"变成可证伪的。
-
-    两边都是实测中位数,不是模拟,所以可以直接陈述;
-    但样本少时相关≠因果,reliable=false 时报告必须说明这一点。
-    """
-    data = ledger.load()
-    matched = [t for t in data["tips_to_try"] if t.get("kb_id") == args.tip]
-    if not matched:
-        return emit({"error": "%s 不在待实践清单中" % args.tip}, 1)
-    tip = matched[-1]
-    pivot = tip.get("date_updated") or tip.get("date_added")
-    if not pivot:
-        return emit({"error": "%s 没有日期,无法切分前后" % args.tip}, 1)
-    records = [r for r in ledger.read_sessions() if r.get("date")]
-    if args.complexity:
-        records = [r for r in records if r.get("complexity") == args.complexity]
-    before = [r for r in records if r["date"] < pivot]
-    after = [r for r in records if r["date"] >= pivot]
-    m_before, m_after = _medians(before), _medians(after)
-    changes = {}
-    for key, bval in m_before.items():
-        aval = m_after.get(key)
-        if aval is None or not bval:
-            continue
-        changes[key] = {
-            "before": bval,
-            "after": aval,
-            "delta_pct": round((aval - bval) / bval * 100, 1),
-        }
-    reliable = len(before) >= EFFECT_MIN_PER_SIDE and len(after) >= EFFECT_MIN_PER_SIDE
-    return emit(
-        {
-            "kb_id": args.tip,
-            "status": tip.get("status"),
-            "note": tip.get("note"),
-            "pivot_date": pivot,
-            "complexity": args.complexity,
-            "before": {"n": len(before), "medians": m_before},
-            "after": {"n": len(after), "medians": m_after},
-            "changes": changes,
-            "reliable": reliable,
-            "caveat": (
-                "两侧样本都是实测值,可以直接陈述数字;但每侧不足 %d 条时,只能说前后有变化,"
-                "不能说变化是这条建议带来的" % EFFECT_MIN_PER_SIDE
-            ),
-        }
-    )
 
 
 def _num(record, dotted):
@@ -543,11 +288,105 @@ def _num(record, dotted):
     return cur if isinstance(cur, (int, float)) else None
 
 
+def cmd_baseline(ledger, args):
+    records = [r for r in ledger.read_sessions() if scale_of(r) == args.scale]
+    if len(records) < BASELINE_MIN_RECORDS:
+        return emit({"ready": False, "count": len(records), "needed": BASELINE_MIN_RECORDS})
+    return emit(
+        {"ready": True, "count": len(records), "scale": args.scale,
+         "medians": _medians(records)}
+    )
+
+
+def cmd_compare(ledger, args):
+    """本次 vs 你自己在同规模任务上的中位数。
+
+    "应有值"没有通用答案——大任务花小任务十倍 token 是正常的。
+    唯一站得住的分母是你自己同规模的历史,所以不够 10 条就不出数。
+    """
+    try:
+        session = json.loads(Path(args.session_json).read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        return emit({"error": "读取 session-json 失败: %s" % exc}, 1)
+    records = [r for r in ledger.read_sessions() if scale_of(r) == args.scale]
+    if len(records) < BASELINE_MIN_RECORDS:
+        return emit(
+            {
+                "ready": False,
+                "count": len(records),
+                "needed": BASELINE_MIN_RECORDS,
+                "note": "同规模记录不足,本次不要在报告里提超标——没有分母就没有超标。"
+                        "这是新用户的正常状态,不用解释机制,也不用道歉",
+            }
+        )
+    medians = _medians(records)
+    deltas, flagged = {}, []
+    for key, median in medians.items():
+        value = _num(session, key)
+        if value is None or not median:
+            continue
+        ratio = round(value / median, 2)
+        deltas[key] = {"value": value, "baseline_median": median, "ratio": ratio,
+                       "direction": "above" if ratio > 1 else "below"}
+        if ratio >= COMPARE_FLAG_RATIO:
+            flagged.append(key)
+    return emit(
+        {
+            "ready": True,
+            "scale": args.scale,
+            "baseline_count": len(records),
+            "deltas": deltas,
+            "flagged": flagged,
+            "note": "偏差只负责开启调查,不负责下结论。flagged 的指标要去 prompts[] 里"
+                    "找出是哪一轮造成的、行为原因是什么,找不到就不要写进报告。"
+                    "只说倍数,不要换算成美元",
+        }
+    )
+
+
+def cmd_effect(ledger, args):
+    """某个时间点前后的实测对比——把"那次改动到底有没有用"变成可证伪的。
+
+    按日期切分,不依赖任何状态机:你说"我 8 月 4 号开始按建议改了",
+    它就比 8 月 4 号前后同规模会话的实测中位数。
+    """
+    pivot = args.since
+    try:
+        datetime.strptime(pivot, "%Y-%m-%d")
+    except ValueError:
+        return emit({"error": "--since 需要 YYYY-MM-DD 格式,收到: %s" % pivot}, 1)
+    records = [r for r in ledger.read_sessions() if r.get("date")]
+    if args.scale:
+        records = [r for r in records if scale_of(r) == args.scale]
+    before = [r for r in records if r["date"] < pivot]
+    after = [r for r in records if r["date"] >= pivot]
+    m_before, m_after = _medians(before), _medians(after)
+    changes = {}
+    for key, bval in m_before.items():
+        aval = m_after.get(key)
+        if aval is None or not bval:
+            continue
+        changes[key] = {"before": bval, "after": aval,
+                        "delta_pct": round((aval - bval) / bval * 100, 1)}
+    reliable = len(before) >= EFFECT_MIN_PER_SIDE and len(after) >= EFFECT_MIN_PER_SIDE
+    return emit(
+        {
+            "pivot_date": pivot,
+            "scale": args.scale,
+            "before": {"n": len(before), "medians": m_before},
+            "after": {"n": len(after), "medians": m_after},
+            "changes": changes,
+            "reliable": reliable,
+            "caveat": "两侧都是实测值,数字可以直接陈述;但每侧不足 %d 条时,"
+                      "只能说前后有变化,不能说变化是那次改动带来的" % EFFECT_MIN_PER_SIDE,
+        }
+    )
+
+
 def cmd_weekly_pack(ledger, args):
-    """组装周报所需的全部素材(确定性部分),交叉汇总的文字由 LLM 按模板写。"""
+    """组装周报所需的素材(确定性部分),交叉汇总的文字由 LLM 读报告全文来写。"""
     cutoff = (date.today() - timedelta(days=args.days)).isoformat()
     records = [r for r in ledger.read_sessions() if (r.get("date") or "") >= cutoff]
-    data = ledger.load()
 
     by_project = {}
     flag_sessions = {}
@@ -555,7 +394,7 @@ def cmd_weekly_pack(ledger, args):
         key = r.get("project") or r.get("task_summary") or "unknown"
         agg = by_project.setdefault(
             key, {"sessions": 0, "active_min": 0, "user_turns": 0, "output_tokens": 0,
-                  "complexities": [], "overall_scores": []}
+                  "scales": []}
         )
         agg["sessions"] += 1
         for field, dotted in (("active_min", "active_min"), ("user_turns", "user_turns"),
@@ -563,27 +402,16 @@ def cmd_weekly_pack(ledger, args):
             v = _num(r, dotted)
             if v:
                 agg[field] += v
-        if r.get("complexity"):
-            agg["complexities"].append(r["complexity"])
-        s = _num(r, "scores.overall")
-        if s is not None:
-            agg["overall_scores"].append(s)
+        s = scale_of(r)
+        if s:
+            agg["scales"].append(s)
         for flag in r.get("waste_flags") or []:
             flag_sessions.setdefault(flag, []).append(r.get("date"))
 
-    for agg in by_project.values():
-        agg["median_overall"] = (
-            statistics.median(agg["overall_scores"]) if agg["overall_scores"] else None
-        )
-        del agg["overall_scores"]
-
-    # 同一个坑在本周 ≥2 段里出现 = J4 候选(跨会话重复踩坑)
+    # 同一个问题在本周 ≥2 段里出现 = 复发,这是周报最有价值的一栏
     recurring = {f: d for f, d in flag_sessions.items() if len(d) >= 2}
 
-    tips = data["tips_to_try"]
-    active = [t for t in tips if t.get("status") != "skipped"]
-    tried = [t for t in active if t.get("status") in ("tried-worked", "tried-failed")]
-
+    reports = [r.get("report_path") for r in records if r.get("report_path")]
     return emit(
         {
             "period": {"from": cutoff, "to": today(), "days": args.days},
@@ -594,10 +422,9 @@ def cmd_weekly_pack(ledger, args):
                     "date": r.get("date"),
                     "project": r.get("project"),
                     "task_summary": r.get("task_summary"),
-                    "complexity": r.get("complexity"),
+                    "scale": scale_of(r),
                     "active_min": _num(r, "active_min"),
                     "user_turns": _num(r, "user_turns"),
-                    "overall": _num(r, "scores.overall"),
                     "waste_flags": r.get("waste_flags") or [],
                     "report_path": r.get("report_path"),
                 }
@@ -605,15 +432,12 @@ def cmd_weekly_pack(ledger, args):
             ],
             "by_project": by_project,
             "recurring_waste": recurring,
-            "gaps": data["gaps"],
-            "graduated": data["graduated"],
-            "practice_rate": round(len(tried) / len(active), 4) if active else None,
-            "tips_to_try": tips,
-            "missing_terms": data["missing_terms"],
-            "reports_to_read": [
-                r["report_path"] for r in records if r.get("report_path")
+            "recent_suggestions": [
+                s for s in ledger.load_notes()["suggestions"]
+                if (s.get("date") or "") >= cutoff
             ],
-            "reports_missing": sum(1 for r in records if not r.get("report_path")),
+            "reports_to_read": reports,
+            "reports_missing": len(records) - len(reports),
         }
     )
 
@@ -623,79 +447,53 @@ def main(argv=None):
     parser.add_argument("--dir", help="档案目录(默认 ~/.claude/vibecoding-retro)")
     sub = parser.add_subparsers(dest="command", required=True)
 
-    p = sub.add_parser("record", help="追加一条会话记录到 sessions.jsonl")
+    p = sub.add_parser("record", help="把本次复盘的记录和报告全文入档")
     p.add_argument("--session-json", required=True)
-    p.add_argument("--report", help="本次报告的 markdown 文件,会归档进 reports/ 供周报交叉汇总")
+    p.add_argument("--report", help="报告 markdown 文件;不给的话周报里这段只剩数字")
 
     p = sub.add_parser("last-covered", help="上次对该会话复盘覆盖到哪儿(增量复盘用)")
     p.add_argument("--session-id", required=True)
 
-    p = sub.add_parser("weekly-pack", help="组装周报素材(会话汇总+项目对比+复发坑+台账)")
+    p = sub.add_parser("suggest", help="记一条给过的建议(纯追加,无状态)")
+    p.add_argument("--add", required=True, metavar="TEXT", help="建议本身,写人话")
+    p.add_argument("--check", help="下次看什么数据判断它有没有用")
+    p.add_argument("--session-id")
+    p.add_argument("--date", help="默认今天")
+
+    p = sub.add_parser("suggestions", help="列出给过的建议")
+    p.add_argument("--days", type=int, help="只看最近 N 天")
+
+    p = sub.add_parser("weekly-pack", help="组装周报素材(会话汇总+项目对比+复发问题)")
     p.add_argument("--days", type=int, default=7)
 
-    for name in ("confirm", "reject"):
-        p = sub.add_parser(name, help="用户确认/否决某缺口诊断")
-        p.add_argument("--gap", required=True, help="缺口 ID,如 T4")
-        p.add_argument("--date", help="默认今天")
+    p = sub.add_parser("baseline", help="同规模任务的个人中位数")
+    p.add_argument("--scale", required=True, choices=SCALES)
 
-    p = sub.add_parser("tips", help="待实践清单管理")
-    g = p.add_mutually_exclusive_group()
-    g.add_argument("--add", metavar="KB_ID")
-    g.add_argument("--set", nargs=2, metavar=("KB_ID", "STATUS"))
-    g.add_argument("--pending", action="store_true")
-    p.add_argument("--note", help="这条建议落到用户工作流上的具体动作(个性化落点,验证时按它核对)")
-
-    sub.add_parser("practice-rate", help="建议实践率(北极星指标)")
-    sub.add_parser("status", help="全部缺口状态,并执行状态转移")
-
-    p = sub.add_parser("terms", help="词汇台账与聚类")
-    g = p.add_mutually_exclusive_group()
-    g.add_argument("--add", metavar="TERM")
-    g.add_argument("--clusters", action="store_true")
-    p.add_argument("--domain", help="术语所属领域,--add 时必填")
-
-    p = sub.add_parser("baseline", help="同复杂度档位个人基线")
-    p.add_argument("--complexity", required=True, choices=["S", "M", "L"])
-
-    p = sub.add_parser("compare", help="本次会话 vs 同档位个人基线(超出多少倍)")
+    p = sub.add_parser("compare", help="本次 vs 同规模个人中位数(超出几倍)")
     p.add_argument("--session-json", required=True, help="parse_session.py 的输出文件")
-    p.add_argument("--complexity", required=True, choices=["S", "M", "L"])
+    p.add_argument("--scale", required=True, choices=SCALES)
 
-    p = sub.add_parser("effect", help="某条建议采纳前后的实测对比")
-    p.add_argument("--tip", required=True, metavar="KB_ID")
-    p.add_argument("--complexity", choices=["S", "M", "L"], help="限定档位可比性更强,但样本更少")
+    p = sub.add_parser("effect", help="某个日期前后的实测对比")
+    p.add_argument("--since", required=True, metavar="YYYY-MM-DD")
+    p.add_argument("--scale", choices=SCALES, help="限定规模可比性更强,但样本更少")
 
     args = parser.parse_args(argv)
     ledger = Ledger(Path(args.dir) if args.dir else default_dir())
 
+    handlers = {
+        "record": cmd_record,
+        "last-covered": cmd_last_covered,
+        "suggest": cmd_suggest,
+        "suggestions": cmd_suggestions,
+        "weekly-pack": cmd_weekly_pack,
+        "baseline": cmd_baseline,
+        "compare": cmd_compare,
+        "effect": cmd_effect,
+    }
     try:
-        if args.command == "record":
-            return cmd_record(ledger, args)
-        if args.command == "confirm":
-            return cmd_confirm(ledger, args, confirmed=True)
-        if args.command == "reject":
-            return cmd_confirm(ledger, args, confirmed=False)
-        if args.command == "tips":
-            return cmd_tips(ledger, args)
-        if args.command == "practice-rate":
-            return cmd_practice_rate(ledger, args)
-        if args.command == "status":
-            return cmd_status(ledger, args)
-        if args.command == "terms":
-            return cmd_terms(ledger, args)
-        if args.command == "baseline":
-            return cmd_baseline(ledger, args)
-        if args.command == "compare":
-            return cmd_compare(ledger, args)
-        if args.command == "effect":
-            return cmd_effect(ledger, args)
-        if args.command == "last-covered":
-            return cmd_last_covered(ledger, args)
-        if args.command == "weekly-pack":
-            return cmd_weekly_pack(ledger, args)
+        return handlers[args.command](ledger, args)
     except (json.JSONDecodeError, ValueError, OSError) as e:
-        return emit({"error": "台账操作失败,档案未改动: %s" % e}, 1)
-    return 0
+        return emit({"error": "档案操作失败,档案未改动: %s" % e}, 1)
 
 
 if __name__ == "__main__":

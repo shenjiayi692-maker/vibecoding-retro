@@ -4,7 +4,7 @@
 不做可视化——趋势的解读和报告撰写由 LLM 完成。
 
 用法:
-    python3 trend_report.py [--last 10] [--complexity M] [--dir <档案目录>]
+    python3 trend_report.py [--last 10] [--scale medium] [--dir <档案目录>]
 """
 import argparse
 import json
@@ -28,6 +28,18 @@ def pick(record, dotted):
     return cur if isinstance(cur, (int, float)) else None
 
 
+
+LEGACY_SCALE = {"S": "small", "M": "medium", "L": "large"}
+
+
+def ledger_scale(record):
+    """取任务规模,兼容旧记录的 complexity: S/M/L。"""
+    s = record.get("scale")
+    if s in ("small", "medium", "large"):
+        return s
+    return LEGACY_SCALE.get(record.get("complexity"))
+
+
 METRICS = (
     "active_min",
     "duration_min",
@@ -37,15 +49,13 @@ METRICS = (
     "tokens.output",
     "tokens.cache_read",
     "tokens.cost_usd",
-    "scores.overall",
-    "scores.delegation_calibration",
-)
+        )
 
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--last", type=int, default=10, help="取最近 N 条记录(默认 10)")
-    parser.add_argument("--complexity", choices=["S", "M", "L"], help="只看某个复杂度档位")
+    parser.add_argument("--scale", choices=["small", "medium", "large"], help="只看某个规模的任务")
     parser.add_argument("--dir", help="档案目录(默认 ~/.claude/vibecoding-retro)")
     args = parser.parse_args(argv)
 
@@ -68,13 +78,13 @@ def main(argv=None):
             if isinstance(rec, dict):
                 records.append(rec)
 
-    if args.complexity:
-        records = [r for r in records if r.get("complexity") == args.complexity]
+    if args.scale:
+        records = [r for r in records if ledger_scale(r) == args.scale]
     window = records[-args.last:]
 
     series = []
     for r in window:
-        point = {"date": r.get("date"), "complexity": r.get("complexity")}
+        point = {"date": r.get("date"), "scale": ledger_scale(r)}
         for m in METRICS:
             point[m] = pick(r, m)
         point["waste_flags"] = r.get("waste_flags") or []
@@ -100,7 +110,7 @@ def main(argv=None):
         {
             "count": len(series),
             "total_records": len(records),
-            "complexity": args.complexity,
+            "scale": args.scale,
             "series": series,
             "summary": summary,
             "waste_flag_counts": flag_counts,
