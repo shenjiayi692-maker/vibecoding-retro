@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="420" viewBox="0 0 1200 420" role="img" aria-labelledby="title desc">
+  <title id="title">Vibecoding Retro</title>
+  <desc id="desc">A local session log is reduced to an evidence-backed observation, its cost, and one concrete next move.</desc>
+  <rect width="1200" height="420" rx="18" fill="#0b0d0c"/>
+  <g font-family="ui-monospace,SFMono-Regular,Menlo,monospace">
+    <text x="56" y="65" fill="#9af27b" font-size="17" font-weight="700">LOCAL://CLAUDE-CODE/SESSION-RETRO</text>
+    <text x="56" y="154" fill="#f2efe6" font-size="64" font-weight="800">vibecoding-retro</text>
+    <text x="56" y="201" fill="#a8afa9" font-size="22">Evidence from the session.</text>
+    <text x="56" y="231" fill="#a8afa9" font-size="22">One better move for next time.</text>
+    <g transform="translate(56 282)" font-size="17">
+      <text fill="#6ecff6">81 TESTS</text><text x="112" fill="#555c57">/</text>
+      <text x="137" fill="#9af27b">ZERO DEPENDENCIES</text><text x="320" fill="#555c57">/</text>
+      <text x="345" fill="#f6bd60">ZERO NETWORK</text>
+      <text y="55" fill="#757d77">parse → inspect → explain → archive → compare</text>
+    </g>
+  </g>
+  <g transform="translate(720 40)" font-family="ui-monospace,SFMono-Regular,Menlo,monospace">
+    <rect width="428" height="340" rx="12" fill="#141816" stroke="#374039"/>
+    <circle cx="24" cy="22" r="5" fill="#ef6b5b"/><circle cx="42" cy="22" r="5" fill="#f6bd60"/><circle cx="60" cy="22" r="5" fill="#9af27b"/>
+    <path d="M0 43 H428" stroke="#374039"/>
+    <text x="22" y="78" fill="#6ecff6" font-size="15">OBSERVATION</text>
+    <text x="22" y="106" fill="#e0e4df" font-size="17">core requirement arrived on turn 17</text>
+    <path d="M22 128 H406" stroke="#2b312d"/>
+    <text x="22" y="163" fill="#f6bd60" font-size="15">COST</text>
+    <text x="22" y="191" fill="#e0e4df" font-size="17">9 earlier fixes targeted the wrong shape</text>
+    <path d="M22 213 H406" stroke="#2b312d"/>
+    <text x="22" y="248" fill="#9af27b" font-size="15">NEXT MOVE</text>
+    <text x="22" y="276" fill="#e0e4df" font-size="17">write one sentence defining “done”</text>
+    <rect x="22" y="302" width="178" height="24" rx="4" fill="#203a25"/>
+    <text x="33" y="319" fill="#9af27b" font-size="13">secret scan: clean</text>
+  </g>
+</svg>

@@ -1,200 +1,97 @@
-# vibecoding-retro
+<p align="center">
+  <img src="./assets/readme/hero.svg" width="100%" alt="Vibecoding Retro turns a Claude Code session log into an evidence-backed plain-language retrospective">
+</p>
 
-**复盘你和 AI 的每一段编程对话。** 说一句"复盘",得到一份大白话报告:这次哪里浪费了、为什么、下次怎么改。
+**Vibecoding Retro** is a local Claude Code plugin for reviewing how an AI-assisted coding session actually went. Say “复盘” or run `/retro`; it parses the session log, finds concrete sources of waste, explains their cost in plain language, and ends each finding with one change to try next time.
 
-形态是一个 **Claude Code plugin**,界面就是对话。没有网站、没有服务器、没有数据库,数据是你本地的几个纯文本文件,可 git、可手改、可删。**不发一个网络请求。**
+No website, server, database, telemetry, or network request. The data stays in local text files that you can inspect, edit, version, or delete.
 
-## 它给你什么
+## What a retrospective looks like
 
-不是"你花了 80 万 token",而是:
+```text
+Observation
+The core requirement first appeared on turn 17.
 
-```
-这次会话:27 轮,活跃 6.8 小时,缓存命中 95%(很好,大部分上下文没重复付费)
+Cost
+Nine earlier fixes targeted a mechanism that did not yet exist.
 
-发现 3 个可以改的地方:
-
-1. 核心要求到第 17 轮才第一次说出口
-   第 12–13 轮改了 9 个问题,但那时候还不知道要做成什么样
-   → 花掉约 910 万 token,改的是一个核心机制还不存在的东西
-   → 下次:动手前用一句话写清"做完什么样算对"
-
-2. 一个会话装了 7 件不相关的事,中途触发了一次上下文压缩
-   → 压缩之后 AI 把你另一个项目的资料记混了,你花了一轮纠正
-   → 下次:一个任务块做完就开新会话
-
-3. SKILL.md 读了 3 次、ledger.py 读了 3 次
-   → 把这两个文件的职责写进 CLAUDE.md,AI 就不用每次重新翻
+Next move
+Before implementation, write one sentence describing what “done” must look like.
 ```
 
-**没有编号,没有档位,没有评分卡。** 每条都是:现象 → 代价 → 怎么改。
+Reports deliberately avoid internal taxonomies, grades, and personality judgments. They talk about observable behavior: repeated file reads, oversized tool output, context carry, late constraints, unrelated work in one session, cache reuse, and compaction.
 
-## 设计上的几个决定
+## Install
 
-**说人话是硬规则,不是风格偏好。** 早期版本报告里会出现 `T1`、`KB-24`、`L 档` 这类内部编号——那是给工具自己用的索引,对使用者零信息量。现在 SKILL.md 里明令禁止它们出现在报告中。
+In Claude Code:
 
-**单次会话就要有用。** 早期版本有一套"能力缺口台账"(观察→确认 3 次→升级→连续 5 次未现→毕业),要积累三五次才产出第一个结论。对一个别人也要装的工具,这是致命的:新用户第一次用,那些机制全是空的。**现在删掉了状态机,跨会话只做两件轻的事:报告归档、复发统计。**
-
-**给过的建议是纯追加日志,没有状态。** 不记"待实践/已实践/失败/放弃",也不算"实践率"。那要求你每次复盘都回来更新状态,而没人会这么做,结果只是制造愧疚。有没有用交给真实数字判断(见下面的 `effect`)。
-
-**不越界。** 这个工具只审查对话的效率,不做产品规划辅导、不评价你的职业发展。SKILL.md 里明确写了看到自己在写这类建议就删掉。
-
-## 数据采集(全自动)
-
-流式解析 `~/.claude/projects/*/*.jsonl`:
-
-| 类别 | 内容 |
-|---|---|
-| 基础 | token 四项、模型分布、轮次、活跃时长、实际推理档位、skill 归因 |
-| **逐轮账单** | 每个提问花了几次请求、调了什么工具、烧了多少 token、上下文涨了多少 |
-| 证据 | 用户消息全文(过滤掉工具结果、命令、子代理、上下文压缩摘要) |
-| 浪费 | 重复读同一文件、超大工具结果、上下文拖拽、缓存命中率、压缩次数 |
-| 安全 | **密钥扫描 + 自动脱敏**,覆盖你的消息与助手的思考过程 |
-| 自检 | **日志格式变了会报警**,而不是静默出错 |
-
-四个容易被忽略但很关键的处理:
-
-- **上下文压缩摘要不算真人轮次。** 它是系统生成的,既污染轮次统计,更会被当成"你的原话"喂进分析
-- **活跃时长 ≠ 会话跨度。** 跨天会话的跨度可达几千分钟,绝大部分是挂机
-- **助手的思考过程明文写在本地日志里。** 你贴过的密钥如果被复述,同样落盘了,所以扫描覆盖它
-- **解析输出里的密钥被替换成 `«已隐去:类型,长度»`。** 解析结果会进报告、进档案、可能被转发,任何一环都不该再出现密钥字符
-
-### 数字带可信度
-
-每个指标标 `exact` / `derived` / `estimated`。估算值(比如按字符数除以 4 估 token,中文误差可达数倍)在报告里**必须带"约"**,且不能独自支撑一条结论。
-
-**任何情况下不把 token 换算成美元**——订阅制下那是估算的估算,还要维护一张会过期的价目表。只说 token 和倍数。
-
-### 日志格式自检
-
-本产品读的是 Claude Code **未公开承诺的内部日志格式**。官方改字段不会通知,解析器会静默失真——**错的数字比没有数字更危险**。所以每次解析都自检版本和关键字段,发现问题进 `degraded`,报告必须如实说明。
-
-## 和个人历史比
-
-**"超出应有值"的分母只能是你自己。** 通用的"应有值"不存在——大任务花小任务十倍 token 是正常的。所以只跟你同规模任务的历史中位数比,不足 10 条就不出数。新用户前十几次都是这个状态,**报告里不会提"超标",也不会解释为什么**。
-
-而且**偏差只负责开启调查,不负责下结论**:某个指标飘了 2.3 倍,接下来必须回到逐轮账单找出是哪一轮、什么行为造成的。找不到行为原因就不写进报告。
-
-## 建议有没有用,用数字说话
-
-```bash
-ledger.py effect --since 2026-08-04 --scale medium
-```
-
-比较那个日期前后同规模会话的**实测中位数**。两侧都是真实数据,可以直接陈述;但每侧不足 3 条时只能说"前后有变化",不能说"是那次改动带来的"。
-
-## 周报
-
-每次复盘的**报告全文**存进 `reports/`,这是周报唯一的素材来源。周报回答单次答不了的问题:
-
-- 这周精力实际落在哪个项目,和你自己说的优先级一致吗
-- 同一个问题在几个项目里重现
-- **下周只给一件事**——给清单会和单次复盘的建议叠加,直接压垮注意力
-
-## 复盘覆盖率
-
-plugin 带一个 SessionEnd 钩子,**只往索引里追加一行**(会话 id、项目、时间),不生成报告、不弹通知、不调模型。周报据此报出"本周 7 段会话,复盘了 2 段"。
-
-钩子为什么只做这么少:**"对话结束"在 Claude Code 里不是个干净的概念**——一个 session 可以跨天、可以 resume。所以复盘仍由你主动发起。钩子补的只是那个真实漏洞:忘了复盘的会话原本是隐形的。周报**只陈述不催促**。
-
----
-
-## 安装
-
-```
+```text
 /plugin marketplace add shenjiayi692-maker/vibecoding-retro
-```
-
-```
 /plugin install vibecoding-retro@vibecoding-retro
 ```
 
-要求:Claude Code + Python 3.9+。**零 pip 依赖**,只用标准库。
+Requirements: Claude Code and Python 3.9+. The plugin uses only the Python standard library.
 
-装完带三样:复盘 skill、`/retro` 与 `/weekly-retro` 命令、SessionEnd 索引钩子。
-
-只装 skill(不要命令和钩子):
+To install only the skill—without slash commands or the SessionEnd index hook:
 
 ```bash
-git clone https://github.com/shenjiayi692-maker/vibecoding-retro /tmp/vr && cp -r /tmp/vr/skills/vibecoding-retro ~/.claude/skills/
+git clone https://github.com/shenjiayi692-maker/vibecoding-retro /tmp/vibecoding-retro
+cp -r /tmp/vibecoding-retro/skills/vibecoding-retro ~/.claude/skills/
 ```
 
-验证:
+Verify log discovery:
 
 ```bash
 python3 ~/.claude/skills/vibecoding-retro/scripts/parse_session.py --list --limit 3
 ```
 
-## 使用
+## Use
 
-| 你说 | 发生什么 |
-|---|---|
-| **复盘** 或 `/retro` | 解析本段 → 找问题 → 每条给现象/代价/改法 → 报告归档 |
-| **周复盘** 或 `/weekly-retro` | 读本周全部报告 → 跨项目汇总 → 下周一件事 |
+| You say | The plugin does |
+| --- | --- |
+| `复盘` or `/retro` | Parse one session, produce evidence-backed findings, and archive the report |
+| `周复盘` or `/weekly-retro` | Compare the week's reports across projects and choose one focus for next week |
 
-其他环境(Cursor / Claude.ai)没有本地日志,走问卷(≤6 问,首条 prompt 原文必收)。证据不足的不输出——**贴多少说多少**。
+The SessionEnd hook only appends a session ID, project, and timestamp to a local index. It does not generate a report, call a model, or notify you. Retrospectives remain intentional because a Claude Code session can be resumed or span multiple days.
 
-## 数据在哪
+## Evidence and measurement
 
-全部在 `~/.claude/vibecoding-retro/`:
+The streaming parser reads `~/.claude/projects/*/*.jsonl` and reports:
 
-| 文件 | 内容 |
-|---|---|
-| `sessions.jsonl` | 每次复盘的指标记录(append-only) |
-| `reports/` | 报告全文 + 周报 |
-| `notes.json` | 给过的建议(纯追加日志) |
-| `session-index.jsonl` | 钩子登记的会话索引(只有 id/项目/时间) |
+- token usage, model distribution, human turns, active duration, reasoning effort, and cache reuse;
+- request, tool, token, and context growth for each human prompt;
+- repeated reads, large outputs, context carry, and compaction events;
+- schema-health warnings when Claude Code's undocumented log format changes;
+- metric confidence as `exact`, `derived`, or `estimated`.
 
-**绝不写入**代码内容、密钥、敏感路径。密钥扫描只报"第几轮、什么来源、什么类型、多长",**不回显任何密钥字符**。
+Estimated values must be described as approximate and cannot support a finding alone. The tool never converts tokens to dollars.
 
-## 直接调脚本(可选)
+Personal baselines appear only after at least ten comparable sessions. A deviation opens an investigation; it is not itself a conclusion. The report still has to trace the difference to a specific turn and behavior.
 
-```bash
-# 解析
-parse_session.py --latest
-parse_session.py --file <日志> --since <时间戳>    # 只看某段增量
-parse_session.py --list --days 7
+## Local data and secret handling
 
-# 档案
-ledger.py record --session-json <f> --report <r.md>
-ledger.py last-covered --session-id <id>
-ledger.py suggest --add "<建议>" --check "<看什么>"
-ledger.py weekly-pack --days 7
-ledger.py baseline --scale medium
-ledger.py compare --session-json <f> --scale medium
-ledger.py effect --since 2026-08-04
+Everything is stored under `~/.claude/vibecoding-retro/`:
 
-# 趋势
-trend_report.py --last 10
-```
+| Path | Contents |
+| --- | --- |
+| `sessions.jsonl` | Append-only metrics for reviewed sessions |
+| `reports/` | Full session and weekly retrospectives |
+| `notes.json` | Append-only suggestions and checks |
+| `session-index.jsonl` | Session ID, project, and timestamp from the hook |
 
-## 调阈值
+The scanner covers human messages plus assistant reasoning and replies. Findings identify location, source, secret type, and length while replacing the secret itself with a redaction marker. Tool execution output is **not** covered by the secret scan.
 
-- `references/waste-patterns.md` —— 浪费的判定标准与怎么写进报告
-- `references/observation-patterns.md` —— 提问方式和思路上的常见问题
-- `references/playbook.md` —— 改法手册,按现象索引
-- `scripts/parse_session.py` 顶部 —— 重复读次数、超大结果阈值、挂机判定间隔
-- `scripts/ledger.py` 顶部 —— 基线最小条数、偏差标记倍数、前后对比最小样本
-
-## 边界
-
-- **自动采集只支持 Claude Code**,它需要本地会话日志
-- **密钥扫描不覆盖工具执行结果**(你的消息和助手的思考/回复都覆盖)
-- **说的是行为,不是人**;禁止心理分析式措辞
-- 往改法手册加条目**一律先给 diff、经你确认**
-- **依赖未公开承诺的日志格式**——这是架构上的赌注。缓解手段是格式自检,但 Claude Code 大改日志结构时仍需跟进修复
-
-## 开发
+## Develop and verify
 
 ```bash
-python3 -m unittest discover tests    # 81 个测试
+python3 -m unittest discover tests
 ```
 
-```
-.claude-plugin/            plugin.json + marketplace.json
-skills/vibecoding-retro/   SKILL.md + references + scripts + templates
-commands/                  /retro、/weekly-retro
-hooks/                     SessionEnd 会话索引钩子
-tests/                     81 个单测 + 夹具
-```
+The 81-test suite covers exact accounting, prompt attribution, context carry, confidence labels, schema drift, secret redaction, false positives, report archiving, incremental boundaries, weekly aggregation, and silent hook failure. Fixture secrets are synthetic placeholders.
 
-夹具覆盖:精确统计、逐轮归因、上下文拖拽、指标可信度、格式漂移与版本自检、密钥扫描与脱敏(含 git SHA 与 UUID 不误报、思考过程泄漏、同轮回声去重)、报告归档、增量边界、建议日志、周报汇总与覆盖率、钩子静默失败。**夹具中的密钥均为伪造占位串。**
+## Boundary
+
+- Automatic capture supports Claude Code because it depends on local session logs.
+- Cursor and Claude.ai use a short evidence questionnaire instead of automatic parsing.
+- The parser depends on an internal, undocumented log format; health checks surface degradation, but major upstream changes can still require maintenance.
+- The tool evaluates the workflow, not the person, and does not provide product strategy or career coaching.
