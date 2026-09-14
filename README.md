@@ -2,6 +2,8 @@
   <img src="./assets/readme/hero.svg" width="100%" alt="Vibecoding Retro turns a Claude Code session log into an evidence-backed plain-language retrospective">
 </p>
 
+<p align="center"><strong>English</strong> · <a href="./README.zh-CN.md">中文</a></p>
+
 **Vibecoding Retro** is a local Claude Code plugin for reviewing how an AI-assisted coding session actually went. Say “复盘” or run `/retro`; it parses the session log, finds concrete sources of waste, explains their cost in plain language, and ends each finding with one change to try next time.
 
 No website, server, database, telemetry, or network request. The data stays in local text files that you can inspect, edit, version, or delete.
