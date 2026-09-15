@@ -98,3 +98,7 @@ python3 -m unittest discover tests
 - Cursor 和 Claude.ai 走一份简短的证据问卷，而不是自动解析。
 - 解析器依赖一个内部的、未公开的日志格式；健康检查能暴露退化，但上游的大改动仍可能需要维护。
 - 这个工具评估的是工作流，不是人，也不提供产品策略或职业规划建议。
+
+## 许可
+
+MIT,见 [LICENSE](./LICENSE)。

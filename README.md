@@ -105,3 +105,7 @@ The 81-test suite covers exact accounting, prompt attribution, context carry, co
 - Cursor and Claude.ai use a short evidence questionnaire instead of automatic parsing.
 - The parser depends on an internal, undocumented log format; health checks surface degradation, but major upstream changes can still require maintenance.
 - The tool evaluates the workflow, not the person, and does not provide product strategy or career coaching.
+
+## License
+
+MIT—see [LICENSE](./LICENSE).
