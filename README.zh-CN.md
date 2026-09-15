@@ -4,6 +4,14 @@
 
 <p align="center"><a href="./README.md">English</a> · <strong>中文</strong></p>
 
+跟 AI 结对写了三小时，不知道时间花在哪了。说一句"复盘"，拿到一个有会话日志支撑的答案，而不是凭感觉。
+
+```bash
+git clone https://github.com/shenjiayi692-maker/vibecoding-retro && python3 vibecoding-retro/scripts/parse_session.py --list --limit 3
+```
+
+这会读你自己的 Claude Code 日志，打印出它能测到的东西——不用安装、无依赖、数据不离开你的机器。要正经用起来则按下面装成插件。
+
 **Vibecoding Retro** 是一个本地运行的 Claude Code 插件，用来复盘一段 AI 辅助编程到底进行得怎么样。说一句"复盘"或者跑 `/retro`，它会解析会话日志，找出具体的浪费来源，用大白话说明代价，并在每条发现的末尾给出一个下次可以试的改法。
 
 没有网站、服务器、数据库、遥测，也不发任何网络请求。数据留在本地文本文件里，你可以随时查看、修改、纳入版本管理或删除。
