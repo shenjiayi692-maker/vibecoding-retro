@@ -7,7 +7,7 @@
 Three hours with an AI coding assistant and no idea where the time went. Say "retro" and get an answer backed by the session log, not by vibes.
 
 ```bash
-git clone https://github.com/shenjiayi692-maker/vibecoding-retro && python3 vibecoding-retro/scripts/parse_session.py --list --limit 3
+git clone https://github.com/shenjiayi692-maker/vibecoding-retro && python3 vibecoding-retro/skills/vibecoding-retro/scripts/parse_session.py --list --limit 3
 ```
 
 That reads your own Claude Code logs and prints what it can measure — no install, no dependencies, nothing leaves your machine. To use it properly, install it as a plugin (below).

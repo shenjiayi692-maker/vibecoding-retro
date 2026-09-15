@@ -7,7 +7,7 @@
 跟 AI 结对写了三小时，不知道时间花在哪了。说一句"复盘"，拿到一个有会话日志支撑的答案，而不是凭感觉。
 
 ```bash
-git clone https://github.com/shenjiayi692-maker/vibecoding-retro && python3 vibecoding-retro/scripts/parse_session.py --list --limit 3
+git clone https://github.com/shenjiayi692-maker/vibecoding-retro && python3 vibecoding-retro/skills/vibecoding-retro/scripts/parse_session.py --list --limit 3
 ```
 
 这会读你自己的 Claude Code 日志，打印出它能测到的东西——不用安装、无依赖、数据不离开你的机器。要正经用起来则按下面装成插件。
